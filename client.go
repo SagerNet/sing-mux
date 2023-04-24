@@ -114,7 +114,7 @@ func (c *Client) offer(ctx context.Context) (abstractSession, error) {
 	c.access.Lock()
 	defer c.access.Unlock()
 
-	sessions := make([]abstractSession, 0, c.maxConnections)
+	var sessions []abstractSession
 	for element := c.connections.Front(); element != nil; {
 		if element.Value.IsClosed() {
 			nextElement := element.Next()

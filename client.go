@@ -181,3 +181,8 @@ func (c *Client) Reset() {
 	}
 	c.connections.Init()
 }
+
+func (c *Client) Close() error {
+	c.Reset()
+	return nil
+}

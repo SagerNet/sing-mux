@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/sagernet/sing/common/atomic"
@@ -106,6 +107,7 @@ type h2MuxConnWrapper struct {
 	N.ExtendedConn
 	flusher http.Flusher
 	done    chan struct{}
+	access  sync.Mutex
 }
 
 func newHTTP2Wrapper(conn net.Conn, flusher http.Flusher) *h2MuxConnWrapper {
@@ -143,6 +145,8 @@ func (w *h2MuxConnWrapper) WriteBuffer(buffer *buf.Buffer) error {
 }
 
 func (w *h2MuxConnWrapper) Close() error {
+	w.access.Lock()
+	defer w.access.Unlock()
 	select {
 	case <-w.done:
 	default:

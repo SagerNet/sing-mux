@@ -106,8 +106,9 @@ func (s *h2MuxServerSession) CanTakeNewRequest() bool {
 type h2MuxConnWrapper struct {
 	N.ExtendedConn
 	flusher http.Flusher
-	done    chan struct{}
 	access  sync.Mutex
+	closed  bool
+	done    chan struct{}
 }
 
 func newHTTP2Wrapper(conn net.Conn, flusher http.Flusher) *h2MuxConnWrapper {
@@ -119,10 +120,10 @@ func newHTTP2Wrapper(conn net.Conn, flusher http.Flusher) *h2MuxConnWrapper {
 }
 
 func (w *h2MuxConnWrapper) Write(p []byte) (n int, err error) {
-	select {
-	case <-w.done:
+	w.access.Lock()
+	defer w.access.Unlock()
+	if w.closed {
 		return 0, net.ErrClosed
-	default:
 	}
 	n, err = w.ExtendedConn.Write(p)
 	if err == nil {
@@ -132,10 +133,10 @@ func (w *h2MuxConnWrapper) Write(p []byte) (n int, err error) {
 }
 
 func (w *h2MuxConnWrapper) WriteBuffer(buffer *buf.Buffer) error {
-	select {
-	case <-w.done:
+	w.access.Lock()
+	defer w.access.Unlock()
+	if w.closed {
 		return net.ErrClosed
-	default:
 	}
 	err := w.ExtendedConn.WriteBuffer(buffer)
 	if err == nil {
@@ -146,12 +147,13 @@ func (w *h2MuxConnWrapper) WriteBuffer(buffer *buf.Buffer) error {
 
 func (w *h2MuxConnWrapper) Close() error {
 	w.access.Lock()
-	defer w.access.Unlock()
 	select {
 	case <-w.done:
 	default:
 		close(w.done)
 	}
+	w.closed = true
+	w.access.Unlock()
 	return w.ExtendedConn.Close()
 }
 

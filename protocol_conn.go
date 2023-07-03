@@ -1,7 +1,6 @@
 package mux
 
 import (
-	"io"
 	"net"
 
 	"github.com/sagernet/sing/common/buf"
@@ -45,13 +44,6 @@ func (c *protocolConn) Write(p []byte) (n int, err error) {
 	}
 	c.requestWritten = true
 	return n, err
-}
-
-func (c *protocolConn) ReadFrom(r io.Reader) (n int64, err error) {
-	if !c.requestWritten {
-		return bufio.ReadFrom0(c, r)
-	}
-	return bufio.Copy(c.Conn, r)
 }
 
 func (c *protocolConn) Upstream() any {

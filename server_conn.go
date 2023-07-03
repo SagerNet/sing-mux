@@ -21,24 +21,20 @@ type serverConn struct {
 
 func (c *serverConn) HandshakeFailure(err error) error {
 	errMessage := err.Error()
-	_buffer := buf.StackNewSize(1 + rw.UVariantLen(uint64(len(errMessage))) + len(errMessage))
-	defer common.KeepAlive(_buffer)
-	buffer := common.Dup(_buffer)
+	buffer := buf.NewSize(1 + rw.UVariantLen(uint64(len(errMessage))) + len(errMessage))
 	defer buffer.Release()
 	common.Must(
 		buffer.WriteByte(statusError),
-		rw.WriteVString(_buffer, errMessage),
+		rw.WriteVString(buffer, errMessage),
 	)
-	return c.ExtendedConn.WriteBuffer(buffer)
+	return common.Error(c.ExtendedConn.Write(buffer.Bytes()))
 }
 
 func (c *serverConn) Write(b []byte) (n int, err error) {
 	if c.responseWritten {
 		return c.ExtendedConn.Write(b)
 	}
-	_buffer := buf.StackNewSize(1 + len(b))
-	defer common.KeepAlive(_buffer)
-	buffer := common.Dup(_buffer)
+	buffer := buf.NewSize(1 + len(b))
 	defer buffer.Release()
 	common.Must(
 		buffer.WriteByte(statusSuccess),
@@ -89,15 +85,13 @@ type serverPacketConn struct {
 
 func (c *serverPacketConn) HandshakeFailure(err error) error {
 	errMessage := err.Error()
-	_buffer := buf.StackNewSize(1 + rw.UVariantLen(uint64(len(errMessage))) + len(errMessage))
-	defer common.KeepAlive(_buffer)
-	buffer := common.Dup(_buffer)
+	buffer := buf.NewSize(1 + rw.UVariantLen(uint64(len(errMessage))) + len(errMessage))
 	defer buffer.Release()
 	common.Must(
 		buffer.WriteByte(statusError),
-		rw.WriteVString(_buffer, errMessage),
+		rw.WriteVString(buffer, errMessage),
 	)
-	return c.ExtendedConn.WriteBuffer(buffer)
+	return common.Error(c.ExtendedConn.Write(buffer.Bytes()))
 }
 
 func (c *serverPacketConn) ReadPacket(buffer *buf.Buffer) (destination M.Socksaddr, err error) {
@@ -178,15 +172,13 @@ type serverPacketAddrConn struct {
 
 func (c *serverPacketAddrConn) HandshakeFailure(err error) error {
 	errMessage := err.Error()
-	_buffer := buf.StackNewSize(1 + rw.UVariantLen(uint64(len(errMessage))) + len(errMessage))
-	defer common.KeepAlive(_buffer)
-	buffer := common.Dup(_buffer)
+	buffer := buf.NewSize(1 + rw.UVariantLen(uint64(len(errMessage))) + len(errMessage))
 	defer buffer.Release()
 	common.Must(
 		buffer.WriteByte(statusError),
-		rw.WriteVString(_buffer, errMessage),
+		rw.WriteVString(buffer, errMessage),
 	)
-	return c.ExtendedConn.WriteBuffer(buffer)
+	return common.Error(c.ExtendedConn.Write(buffer.Bytes()))
 }
 
 func (c *serverPacketAddrConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {

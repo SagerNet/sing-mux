@@ -66,9 +66,7 @@ func (c *paddingConn) Read(p []byte) (n int, err error) {
 		if len(p) >= 4 {
 			paddingHdr = p[:4]
 		} else {
-			_paddingHdr := make([]byte, 4)
-			defer common.KeepAlive(_paddingHdr)
-			paddingHdr = common.Dup(_paddingHdr)
+			paddingHdr = make([]byte, 4)
 		}
 		_, err = io.ReadFull(c.ExtendedConn, paddingHdr)
 		if err != nil {
@@ -115,9 +113,7 @@ func (c *paddingConn) Write(p []byte) (n int, err error) {
 func (c *paddingConn) write(p []byte) (n int, err error) {
 	if c.writePadding < kFirstPaddings {
 		paddingLen := 256 + rand.Intn(512)
-		_buffer := buf.StackNewSize(4 + len(p) + paddingLen)
-		defer common.KeepAlive(_buffer)
-		buffer := common.Dup(_buffer)
+		buffer := buf.NewSize(4 + len(p) + paddingLen)
 		defer buffer.Release()
 		header := buffer.Extend(4)
 		binary.BigEndian.PutUint16(header[:2], uint16(len(p)))
@@ -160,9 +156,7 @@ func (c *paddingConn) ReadBuffer(buffer *buf.Buffer) error {
 		if len(p) >= 4 {
 			paddingHdr = p[:4]
 		} else {
-			_paddingHdr := make([]byte, 4)
-			defer common.KeepAlive(_paddingHdr)
-			paddingHdr = common.Dup(_paddingHdr)
+			paddingHdr = make([]byte, 4)
 		}
 		_, err := io.ReadFull(c.ExtendedConn, paddingHdr)
 		if err != nil {

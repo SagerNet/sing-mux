@@ -7,7 +7,6 @@ import (
 
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
-	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
@@ -50,9 +49,7 @@ func (c *clientConn) Write(b []byte) (n int, err error) {
 		Network:     N.NetworkTCP,
 		Destination: c.destination,
 	}
-	_buffer := buf.StackNewSize(streamRequestLen(request) + len(b))
-	defer common.KeepAlive(_buffer)
-	buffer := common.Dup(_buffer)
+	buffer := buf.NewSize(streamRequestLen(request) + len(b))
 	defer buffer.Release()
 	EncodeStreamRequest(request, buffer)
 	buffer.Write(b)
@@ -62,20 +59,6 @@ func (c *clientConn) Write(b []byte) (n int, err error) {
 	}
 	c.requestWritten = true
 	return len(b), nil
-}
-
-func (c *clientConn) ReadFrom(r io.Reader) (n int64, err error) {
-	if !c.requestWritten {
-		return bufio.ReadFrom0(c, r)
-	}
-	return bufio.Copy(c.Conn, r)
-}
-
-func (c *clientConn) WriteTo(w io.Writer) (n int64, err error) {
-	if !c.responseRead {
-		return bufio.WriteTo0(c, w)
-	}
-	return bufio.Copy(w, c.Conn)
 }
 
 func (c *clientConn) LocalAddr() net.Addr {
@@ -148,9 +131,7 @@ func (c *clientPacketConn) writeRequest(payload []byte) (n int, err error) {
 	if len(payload) > 0 {
 		rLen += 2 + len(payload)
 	}
-	_buffer := buf.StackNewSize(rLen)
-	defer common.KeepAlive(_buffer)
-	buffer := common.Dup(_buffer)
+	buffer := buf.NewSize(rLen)
 	defer buffer.Release()
 	EncodeStreamRequest(request, buffer)
 	if len(payload) > 0 {
@@ -324,9 +305,7 @@ func (c *clientPacketAddrConn) writeRequest(payload []byte, destination M.Socksa
 	if len(payload) > 0 {
 		rLen += M.SocksaddrSerializer.AddrPortLen(destination) + 2 + len(payload)
 	}
-	_buffer := buf.StackNewSize(rLen)
-	defer common.KeepAlive(_buffer)
-	buffer := common.Dup(_buffer)
+	buffer := buf.NewSize(rLen)
 	defer buffer.Release()
 	EncodeStreamRequest(request, buffer)
 	if len(payload) > 0 {

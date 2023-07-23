@@ -166,7 +166,8 @@ var _ abstractSession = (*h2MuxClientSession)(nil)
 type h2MuxClientSession struct {
 	transport  *http2.Transport
 	clientConn *http2.ClientConn
-	done       chan struct{}
+	access     sync.RWMutex
+	closed     bool
 }
 
 func newH2MuxClient(conn net.Conn) (*h2MuxClientSession, error) {
@@ -178,7 +179,6 @@ func newH2MuxClient(conn net.Conn) (*h2MuxClientSession, error) {
 			ReadIdleTimeout:  idleTimeout,
 			MaxReadFrameSize: buf.BufferSize,
 		},
-		done: make(chan struct{}),
 	}
 	session.transport.ConnPool = session
 	clientConn, err := session.transport.NewClientConn(conn)
@@ -228,21 +228,19 @@ func (s *h2MuxClientSession) NumStreams() int {
 }
 
 func (s *h2MuxClientSession) Close() error {
-	select {
-	case <-s.done:
-	default:
-		close(s.done)
+	s.access.Lock()
+	defer s.access.Unlock()
+	if s.closed {
+		return os.ErrClosed
 	}
+	s.closed = true
 	return s.clientConn.Close()
 }
 
 func (s *h2MuxClientSession) IsClosed() bool {
-	select {
-	case <-s.done:
-		return true
-	default:
-	}
-	return s.clientConn.State().Closed
+	s.access.RLock()
+	defer s.access.RUnlock()
+	return s.closed || s.clientConn.State().Closed
 }
 
 func (s *h2MuxClientSession) CanTakeNewRequest() bool {

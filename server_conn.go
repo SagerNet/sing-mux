@@ -20,6 +20,10 @@ type serverConn struct {
 	responseWritten bool
 }
 
+func (c *serverConn) NeedHandshake() bool {
+	return !c.responseWritten
+}
+
 func (c *serverConn) HandshakeFailure(err error) error {
 	errMessage := err.Error()
 	buffer := buf.NewSize(1 + rw.UVariantLen(uint64(len(errMessage))) + len(errMessage))
@@ -83,6 +87,10 @@ type serverPacketConn struct {
 	access          sync.Mutex
 	destination     M.Socksaddr
 	responseWritten bool
+}
+
+func (c *serverPacketConn) NeedHandshake() bool {
+	return !c.responseWritten
 }
 
 func (c *serverPacketConn) HandshakeFailure(err error) error {
@@ -184,6 +192,10 @@ type serverPacketAddrConn struct {
 	N.ExtendedConn
 	access          sync.Mutex
 	responseWritten bool
+}
+
+func (c *serverPacketAddrConn) NeedHandshake() bool {
+	return !c.responseWritten
 }
 
 func (c *serverPacketAddrConn) HandshakeFailure(err error) error {

@@ -32,6 +32,10 @@ func newProtocolConn(conn net.Conn, request Request) net.Conn {
 	}
 }
 
+func (c *protocolConn) NeedHandshake() bool {
+	return !c.requestWritten
+}
+
 func (c *protocolConn) Write(p []byte) (n int, err error) {
 	if c.requestWritten {
 		return c.Conn.Write(p)

@@ -20,6 +20,10 @@ type clientConn struct {
 	responseRead   bool
 }
 
+func (c *clientConn) NeedHandshake() bool {
+	return !c.requestWritten
+}
+
 func (c *clientConn) readResponse() error {
 	response, err := ReadStreamResponse(c.Conn)
 	if err != nil {
@@ -92,6 +96,10 @@ type clientPacketConn struct {
 	destination    M.Socksaddr
 	requestWritten bool
 	responseRead   bool
+}
+
+func (c *clientPacketConn) NeedHandshake() bool {
+	return !c.requestWritten
 }
 
 func (c *clientPacketConn) readResponse() error {
@@ -274,6 +282,10 @@ type clientPacketAddrConn struct {
 	destination    M.Socksaddr
 	requestWritten bool
 	responseRead   bool
+}
+
+func (c *clientPacketAddrConn) NeedHandshake() bool {
+	return !c.requestWritten
 }
 
 func (c *clientPacketAddrConn) readResponse() error {

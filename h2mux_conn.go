@@ -8,6 +8,7 @@ import (
 
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/baderror"
+	M "github.com/sagernet/sing/common/metadata"
 )
 
 type httpConn struct {
@@ -58,11 +59,11 @@ func (c *httpConn) Close() error {
 }
 
 func (c *httpConn) LocalAddr() net.Addr {
-	return nil
+	return M.Socksaddr{}
 }
 
 func (c *httpConn) RemoteAddr() net.Addr {
-	return nil
+	return M.Socksaddr{}
 }
 
 func (c *httpConn) SetDeadline(t time.Time) error {

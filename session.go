@@ -3,6 +3,7 @@ package mux
 import (
 	"io"
 	"net"
+	"reflect"
 
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/smux"
@@ -34,6 +35,7 @@ func newClientSession(conn net.Conn, protocol byte) (abstractSession, error) {
 		}
 		return &smuxSession{client}, nil
 	case ProtocolYAMux:
+		checkYAMuxConn(conn)
 		client, err := yamux.Client(conn, yaMuxConfig())
 		if err != nil {
 			return nil, err
@@ -55,6 +57,7 @@ func newServerSession(conn net.Conn, protocol byte) (abstractSession, error) {
 		}
 		return &smuxSession{client}, nil
 	case ProtocolYAMux:
+		checkYAMuxConn(conn)
 		client, err := yamux.Server(conn, yaMuxConfig())
 		if err != nil {
 			return nil, err
@@ -62,6 +65,12 @@ func newServerSession(conn net.Conn, protocol byte) (abstractSession, error) {
 		return &yamuxSession{client}, nil
 	default:
 		return nil, E.New("unexpected protocol ", protocol)
+	}
+}
+
+func checkYAMuxConn(conn net.Conn) {
+	if conn.LocalAddr() == nil || conn.RemoteAddr() == nil {
+		panic("found net.Conn with nil addr: " + reflect.TypeOf(conn).String())
 	}
 }
 

@@ -276,7 +276,10 @@ func (c *serverPacketAddrConn) ReadPacket(buffer *buf.Buffer) (destination M.Soc
 func (c *serverPacketAddrConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr) error {
 	pLen := buffer.Len()
 	common.Must(binary.Write(buf.With(buffer.ExtendHeader(2)), binary.BigEndian, uint16(pLen)))
-	common.Must(M.SocksaddrSerializer.WriteAddrPort(buf.With(buffer.ExtendHeader(M.SocksaddrSerializer.AddrPortLen(destination))), destination))
+	err := M.SocksaddrSerializer.WriteAddrPort(buf.With(buffer.ExtendHeader(M.SocksaddrSerializer.AddrPortLen(destination))), destination)
+	if err != nil {
+		return err
+	}
 	if !c.responseWritten {
 		c.access.Lock()
 		if c.responseWritten {

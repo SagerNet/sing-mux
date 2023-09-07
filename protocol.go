@@ -143,7 +143,7 @@ func streamRequestLen(request StreamRequest) int {
 	return rLen
 }
 
-func EncodeStreamRequest(request StreamRequest, buffer *buf.Buffer) {
+func EncodeStreamRequest(request StreamRequest, buffer *buf.Buffer) error {
 	destination := request.Destination
 	var flags uint16
 	if request.Network == N.NetworkUDP {
@@ -155,10 +155,8 @@ func EncodeStreamRequest(request StreamRequest, buffer *buf.Buffer) {
 			destination = Destination
 		}
 	}
-	common.Must(
-		binary.Write(buffer, binary.BigEndian, flags),
-		M.SocksaddrSerializer.WriteAddrPort(buffer, destination),
-	)
+	common.Must(binary.Write(buffer, binary.BigEndian, flags))
+	return M.SocksaddrSerializer.WriteAddrPort(buffer, destination)
 }
 
 type StreamResponse struct {

@@ -56,7 +56,10 @@ func (c *clientConn) Write(b []byte) (n int, err error) {
 	}
 	buffer := buf.NewSize(streamRequestLen(request) + len(b))
 	defer buffer.Release()
-	EncodeStreamRequest(request, buffer)
+	err = EncodeStreamRequest(request, buffer)
+	if err != nil {
+		return
+	}
 	buffer.Write(b)
 	_, err = c.Conn.Write(buffer.Bytes())
 	if err != nil {
@@ -143,7 +146,10 @@ func (c *clientPacketConn) writeRequest(payload []byte) (n int, err error) {
 	}
 	buffer := buf.NewSize(rLen)
 	defer buffer.Release()
-	EncodeStreamRequest(request, buffer)
+	err = EncodeStreamRequest(request, buffer)
+	if err != nil {
+		return
+	}
 	if len(payload) > 0 {
 		common.Must(
 			binary.Write(buffer, binary.BigEndian, uint16(len(payload))),
@@ -340,10 +346,16 @@ func (c *clientPacketAddrConn) writeRequest(payload []byte, destination M.Socksa
 	}
 	buffer := buf.NewSize(rLen)
 	defer buffer.Release()
-	EncodeStreamRequest(request, buffer)
+	err = EncodeStreamRequest(request, buffer)
+	if err != nil {
+		return
+	}
 	if len(payload) > 0 {
+		err = M.SocksaddrSerializer.WriteAddrPort(buffer, destination)
+		if err != nil {
+			return
+		}
 		common.Must(
-			M.SocksaddrSerializer.WriteAddrPort(buffer, destination),
 			binary.Write(buffer, binary.BigEndian, uint16(len(payload))),
 			common.Error(buffer.Write(payload)),
 		)
@@ -411,10 +423,11 @@ func (c *clientPacketAddrConn) WritePacket(buffer *buf.Buffer, destination M.Soc
 	}
 	bLen := buffer.Len()
 	header := buf.With(buffer.ExtendHeader(M.SocksaddrSerializer.AddrPortLen(destination) + 2))
-	common.Must(
-		M.SocksaddrSerializer.WriteAddrPort(header, destination),
-		binary.Write(header, binary.BigEndian, uint16(bLen)),
-	)
+	err := M.SocksaddrSerializer.WriteAddrPort(header, destination)
+	if err != nil {
+		return err
+	}
+	common.Must(binary.Write(header, binary.BigEndian, uint16(bLen)))
 	return c.ExtendedConn.WriteBuffer(buffer)
 }
 

@@ -13,8 +13,6 @@ import (
 	"github.com/sagernet/sing/common/rw"
 )
 
-var _ N.HandshakeConn = (*serverConn)(nil)
-
 type serverConn struct {
 	N.ExtendedConn
 	responseWritten bool
@@ -76,11 +74,6 @@ func (c *serverConn) NeedAdditionalReadDeadline() bool {
 func (c *serverConn) Upstream() any {
 	return c.ExtendedConn
 }
-
-var (
-	_ N.HandshakeConn = (*serverPacketConn)(nil)
-	_ N.PacketConn    = (*serverPacketConn)(nil)
-)
 
 type serverPacketConn struct {
 	N.ExtendedConn
@@ -182,11 +175,6 @@ func (c *serverPacketConn) FrontHeadroom() int {
 	}
 	return 2
 }
-
-var (
-	_ N.HandshakeConn = (*serverPacketAddrConn)(nil)
-	_ N.PacketConn    = (*serverPacketAddrConn)(nil)
-)
 
 type serverPacketAddrConn struct {
 	N.ExtendedConn

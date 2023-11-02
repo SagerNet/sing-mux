@@ -8,6 +8,7 @@ import (
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
+	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/x/list"
@@ -15,6 +16,7 @@ import (
 
 type Client struct {
 	dialer         N.Dialer
+	logger         logger.Logger
 	protocol       byte
 	maxConnections int
 	minStreams     int
@@ -22,24 +24,35 @@ type Client struct {
 	padding        bool
 	access         sync.Mutex
 	connections    list.List[abstractSession]
+	brutal         BrutalOptions
 }
 
 type Options struct {
 	Dialer         N.Dialer
+	Logger         logger.Logger
 	Protocol       string
 	MaxConnections int
 	MinStreams     int
 	MaxStreams     int
 	Padding        bool
+	Brutal         BrutalOptions
+}
+
+type BrutalOptions struct {
+	Enabled    bool
+	SendBPS    uint64
+	ReceiveBPS uint64
 }
 
 func NewClient(options Options) (*Client, error) {
 	client := &Client{
 		dialer:         options.Dialer,
+		logger:         options.Logger,
 		maxConnections: options.MaxConnections,
 		minStreams:     options.MinStreams,
 		maxStreams:     options.MaxStreams,
 		padding:        options.Padding,
+		brutal:         options.Brutal,
 	}
 	if client.dialer == nil {
 		client.dialer = N.SystemDialer
@@ -126,6 +139,12 @@ func (c *Client) offer(ctx context.Context) (abstractSession, error) {
 		sessions = append(sessions, element.Value)
 		element = element.Next()
 	}
+	if c.brutal.Enabled {
+		if len(sessions) > 0 {
+			return sessions[0], nil
+		}
+		return c.offerNew(ctx)
+	}
 	session := common.MinBy(common.Filter(sessions, abstractSession.CanTakeNewRequest), abstractSession.NumStreams)
 	if session == nil {
 		return c.offerNew(ctx)
@@ -170,8 +189,42 @@ func (c *Client) offerNew(ctx context.Context) (abstractSession, error) {
 		conn.Close()
 		return nil, err
 	}
+	if c.brutal.Enabled {
+		err = c.brutalExchange(conn, session)
+		if err != nil {
+			conn.Close()
+			session.Close()
+			return nil, E.Cause(err, "brutal exchange")
+		}
+	}
 	c.connections.PushBack(session)
 	return session, nil
+}
+
+func (c *Client) brutalExchange(sessionConn net.Conn, session abstractSession) error {
+	stream, err := session.Open()
+	if err != nil {
+		return err
+	}
+	conn := &clientConn{Conn: &wrapStream{stream}, destination: M.Socksaddr{Fqdn: BrutalExchangeDomain}}
+	err = WriteBrutalRequest(conn, c.brutal.ReceiveBPS)
+	if err != nil {
+		return err
+	}
+	serverReceiveBPS, err := ReadBrutalResponse(conn)
+	if err != nil {
+		return err
+	}
+	conn.Close()
+	sendBPS := c.brutal.SendBPS
+	if serverReceiveBPS < sendBPS {
+		sendBPS = serverReceiveBPS
+	}
+	clientBrutalErr := SetBrutalOptions(sessionConn, sendBPS)
+	if clientBrutalErr != nil {
+		c.logger.Debug(E.Cause(clientBrutalErr, "failed to enable TCP Brutal at client"))
+	}
+	return nil
 }
 
 func (c *Client) Reset() {

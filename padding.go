@@ -201,6 +201,10 @@ func (c *paddingConn) FrontHeadroom() int {
 	return 4 + 256 + 1024
 }
 
+func (c *paddingConn) Upstream() any {
+	return c.ExtendedConn
+}
+
 type vectorisedPaddingConn struct {
 	paddingConn
 	writer N.VectorisedWriter

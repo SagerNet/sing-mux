@@ -119,6 +119,7 @@ func (c *Client) offer(ctx context.Context) (abstractSession, error) {
 		if element.Value.IsClosed() {
 			nextElement := element.Next()
 			c.connections.Remove(element)
+			_ = element.Value.Close()
 			element = nextElement
 			continue
 		}

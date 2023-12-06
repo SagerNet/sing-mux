@@ -86,7 +86,8 @@ func (c *Client) DialContext(ctx context.Context, network string, destination M.
 		if err != nil {
 			return nil, err
 		}
-		return bufio.NewUnbindPacketConn(&clientPacketConn{ExtendedConn: bufio.NewExtendedConn(stream), destination: destination}), nil
+		extendedConn := bufio.NewExtendedConn(stream)
+		return &clientPacketConn{AbstractConn: extendedConn, conn: extendedConn, destination: destination}, nil
 	default:
 		return nil, E.Extend(N.ErrUnknownNetwork, network)
 	}
@@ -97,7 +98,8 @@ func (c *Client) ListenPacket(ctx context.Context, destination M.Socksaddr) (net
 	if err != nil {
 		return nil, err
 	}
-	return &clientPacketAddrConn{ExtendedConn: bufio.NewExtendedConn(stream), destination: destination}, nil
+	extendedConn := bufio.NewExtendedConn(stream)
+	return &clientPacketAddrConn{AbstractConn: extendedConn, conn: extendedConn, destination: destination}, nil
 }
 
 func (c *Client) openStream(ctx context.Context) (net.Conn, error) {

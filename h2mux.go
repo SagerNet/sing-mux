@@ -64,7 +64,7 @@ func (s *h2MuxServerSession) ServeHTTP(writer http.ResponseWriter, request *http
 	}
 }
 
-func (s *h2MuxServerSession) Open() (net.Conn, error) {
+func (s *h2MuxServerSession) OpenContext(ctx context.Context) (net.Conn, error) {
 	return nil, os.ErrInvalid
 }
 
@@ -197,13 +197,14 @@ func (s *h2MuxClientSession) MarkDead(conn *http2.ClientConn) {
 	s.Close()
 }
 
-func (s *h2MuxClientSession) Open() (net.Conn, error) {
+func (s *h2MuxClientSession) OpenContext(ctx context.Context) (net.Conn, error) {
 	pipeInReader, pipeInWriter := io.Pipe()
 	request := &http.Request{
 		Method: http.MethodConnect,
 		Body:   pipeInReader,
 		URL:    &url.URL{Scheme: "https", Host: "localhost"},
 	}
+	request = request.WithContext(ctx)
 	conn := newLateHTTPConn(pipeInWriter)
 	go func() {
 		response, err := s.transport.RoundTrip(request)

@@ -111,7 +111,7 @@ func (c *Client) openStream(ctx context.Context) (net.Conn, error) {
 		if err != nil {
 			continue
 		}
-		stream, err = session.Open()
+		stream, err = session.OpenContext(ctx)
 		if err != nil {
 			continue
 		}
@@ -166,6 +166,8 @@ func (c *Client) offer(ctx context.Context) (abstractSession, error) {
 }
 
 func (c *Client) offerNew(ctx context.Context) (abstractSession, error) {
+	ctx, cancel := context.WithTimeout(ctx, TCPTimeout)
+	defer cancel()
 	conn, err := c.dialer.DialContext(ctx, N.NetworkTCP, Destination)
 	if err != nil {
 		return nil, err
@@ -190,7 +192,7 @@ func (c *Client) offerNew(ctx context.Context) (abstractSession, error) {
 		return nil, err
 	}
 	if c.brutal.Enabled {
-		err = c.brutalExchange(conn, session)
+		err = c.brutalExchange(ctx, conn, session)
 		if err != nil {
 			conn.Close()
 			session.Close()
@@ -201,8 +203,8 @@ func (c *Client) offerNew(ctx context.Context) (abstractSession, error) {
 	return session, nil
 }
 
-func (c *Client) brutalExchange(sessionConn net.Conn, session abstractSession) error {
-	stream, err := session.Open()
+func (c *Client) brutalExchange(ctx context.Context, sessionConn net.Conn, session abstractSession) error {
+	stream, err := session.OpenContext(ctx)
 	if err != nil {
 		return err
 	}

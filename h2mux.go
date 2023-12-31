@@ -204,10 +204,21 @@ func (s *h2MuxClientSession) OpenContext(ctx context.Context) (net.Conn, error) 
 		Body:   pipeInReader,
 		URL:    &url.URL{Scheme: "https", Host: "localhost"},
 	}
-	request = request.WithContext(ctx)
-	conn := newLateHTTPConn(pipeInWriter)
+	connCtx, cancel := context.WithCancel(context.Background())
+	request = request.WithContext(connCtx)
+	conn := newLateHTTPConn(pipeInWriter, cancel)
+	requestDone := make(chan struct{})
+	go func() {
+		select {
+		case <-requestDone:
+			return
+		case <-ctx.Done():
+			cancel()
+		}
+	}()
 	go func() {
 		response, err := s.transport.RoundTrip(request)
+		close(requestDone)
 		if err != nil {
 			conn.setup(nil, err)
 		} else if response.StatusCode != 200 {

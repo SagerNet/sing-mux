@@ -1,6 +1,7 @@
 package mux
 
 import (
+	"context"
 	"io"
 	"net"
 	"os"
@@ -16,6 +17,7 @@ type httpConn struct {
 	writer io.Writer
 	create chan struct{}
 	err    error
+	cancel context.CancelFunc
 }
 
 func newHTTPConn(reader io.Reader, writer io.Writer) *httpConn {
@@ -25,10 +27,11 @@ func newHTTPConn(reader io.Reader, writer io.Writer) *httpConn {
 	}
 }
 
-func newLateHTTPConn(writer io.Writer) *httpConn {
+func newLateHTTPConn(writer io.Writer, cancel context.CancelFunc) *httpConn {
 	return &httpConn{
 		create: make(chan struct{}),
 		writer: writer,
+		cancel: cancel,
 	}
 }
 
@@ -55,6 +58,9 @@ func (c *httpConn) Write(b []byte) (n int, err error) {
 }
 
 func (c *httpConn) Close() error {
+	if c.cancel != nil {
+		c.cancel()
+	}
 	return common.Close(c.reader, c.writer)
 }
 

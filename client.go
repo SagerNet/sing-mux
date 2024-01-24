@@ -113,7 +113,7 @@ func (c *Client) openStream(ctx context.Context) (net.Conn, error) {
 		if err != nil {
 			continue
 		}
-		stream, err = session.OpenContext(ctx)
+		stream, err = session.Open()
 		if err != nil {
 			continue
 		}
@@ -206,7 +206,7 @@ func (c *Client) offerNew(ctx context.Context) (abstractSession, error) {
 }
 
 func (c *Client) brutalExchange(ctx context.Context, sessionConn net.Conn, session abstractSession) error {
-	stream, err := session.OpenContext(ctx)
+	stream, err := session.Open()
 	if err != nil {
 		return err
 	}

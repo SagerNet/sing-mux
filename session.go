@@ -1,7 +1,6 @@
 package mux
 
 import (
-	"context"
 	"io"
 	"net"
 	"reflect"
@@ -13,7 +12,7 @@ import (
 )
 
 type abstractSession interface {
-	OpenContext(ctx context.Context) (net.Conn, error)
+	Open() (net.Conn, error)
 	Accept() (net.Conn, error)
 	NumStreams() int
 	Close() error
@@ -81,7 +80,7 @@ type smuxSession struct {
 	*smux.Session
 }
 
-func (s *smuxSession) OpenContext(context.Context) (net.Conn, error) {
+func (s *smuxSession) Open() (net.Conn, error) {
 	return s.OpenStream()
 }
 
@@ -95,10 +94,6 @@ func (s *smuxSession) CanTakeNewRequest() bool {
 
 type yamuxSession struct {
 	*yamux.Session
-}
-
-func (y *yamuxSession) OpenContext(context.Context) (net.Conn, error) {
-	return y.OpenStream()
 }
 
 func (y *yamuxSession) CanTakeNewRequest() bool {

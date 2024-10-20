@@ -7,7 +7,7 @@ import (
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	E "github.com/sagernet/sing/common/exceptions"
-	"github.com/sagernet/sing/common/rw"
+	"github.com/sagernet/sing/common/varbin"
 )
 
 const (
@@ -32,7 +32,7 @@ func WriteBrutalResponse(writer io.Writer, receiveBPS uint64, ok bool, message s
 	if ok {
 		common.Must(binary.Write(buffer, binary.BigEndian, receiveBPS))
 	} else {
-		err := rw.WriteVString(buffer, message)
+		err := varbin.Write(buffer, binary.BigEndian, message)
 		if err != nil {
 			return err
 		}
@@ -52,7 +52,7 @@ func ReadBrutalResponse(reader io.Reader) (uint64, error) {
 		return receiveBPS, err
 	} else {
 		var message string
-		message, err = rw.ReadVString(reader)
+		message, err = varbin.ReadValue[string](reader, binary.BigEndian)
 		if err != nil {
 			return 0, err
 		}

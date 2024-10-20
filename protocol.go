@@ -12,6 +12,7 @@ import (
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/rw"
+	"github.com/sagernet/sing/common/varbin"
 )
 
 const (
@@ -41,14 +42,18 @@ type Request struct {
 }
 
 func ReadRequest(reader io.Reader) (*Request, error) {
-	version, err := rw.ReadByte(reader)
+	var (
+		version  byte
+		protocol byte
+	)
+	err := binary.Read(reader, binary.BigEndian, &version)
 	if err != nil {
 		return nil, err
 	}
 	if version < Version0 || version > Version1 {
 		return nil, E.New("unsupported version: ", version)
 	}
-	protocol, err := rw.ReadByte(reader)
+	err = binary.Read(reader, binary.BigEndian, &protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -166,13 +171,12 @@ type StreamResponse struct {
 
 func ReadStreamResponse(reader io.Reader) (*StreamResponse, error) {
 	var response StreamResponse
-	status, err := rw.ReadByte(reader)
+	err := binary.Read(reader, binary.BigEndian, &response.Status)
 	if err != nil {
 		return nil, err
 	}
-	response.Status = status
-	if status == statusError {
-		response.Message, err = rw.ReadVString(reader)
+	if response.Status == statusError {
+		response.Message, err = varbin.ReadValue[string](reader, binary.BigEndian)
 		if err != nil {
 			return nil, err
 		}

@@ -13,15 +13,24 @@ import (
 	"github.com/sagernet/sing/common/task"
 )
 
+// Deprecated: Use ServiceHandlerEx instead.
+//
+//nolint:staticcheck
 type ServiceHandler interface {
 	N.TCPConnectionHandler
 	N.UDPConnectionHandler
+}
+
+type ServiceHandlerEx interface {
+	N.TCPConnectionHandlerEx
+	N.UDPConnectionHandlerEx
 }
 
 type Service struct {
 	newStreamContext func(context.Context, net.Conn) context.Context
 	logger           logger.ContextLogger
 	handler          ServiceHandler
+	handlerEx        ServiceHandlerEx
 	padding          bool
 	brutal           BrutalOptions
 }
@@ -30,6 +39,7 @@ type ServiceOptions struct {
 	NewStreamContext func(context.Context, net.Conn) context.Context
 	Logger           logger.ContextLogger
 	Handler          ServiceHandler
+	HandlerEx        ServiceHandlerEx
 	Padding          bool
 	Brutal           BrutalOptions
 }
@@ -42,12 +52,26 @@ func NewService(options ServiceOptions) (*Service, error) {
 		newStreamContext: options.NewStreamContext,
 		logger:           options.Logger,
 		handler:          options.Handler,
+		handlerEx:        options.HandlerEx,
 		padding:          options.Padding,
 		brutal:           options.Brutal,
 	}, nil
 }
 
+// Deprecated: Use NewConnectionEx instead.
 func (s *Service) NewConnection(ctx context.Context, conn net.Conn, metadata M.Metadata) error {
+	return s.newConnection(ctx, conn, metadata.Source)
+}
+
+func (s *Service) NewConnectionEx(ctx context.Context, conn net.Conn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
+	err := s.newConnection(ctx, conn, source)
+	N.CloseOnHandshakeFailure(conn, onClose, err)
+	if err != nil {
+		s.logger.ErrorContext(ctx, E.Cause(err, "process multiplex connection from ", source))
+	}
+}
+
+func (s *Service) newConnection(ctx context.Context, conn net.Conn, source M.Socksaddr) error {
 	request, err := ReadRequest(conn)
 	if err != nil {
 		return err
@@ -70,9 +94,10 @@ func (s *Service) NewConnection(ctx context.Context, conn net.Conn, metadata M.M
 			}
 			streamCtx := s.newStreamContext(ctx, stream)
 			go func() {
-				hErr := s.newConnection(streamCtx, conn, stream, metadata)
+				hErr := s.newSession(streamCtx, conn, stream, source)
 				if hErr != nil {
-					s.logger.ErrorContext(streamCtx, E.Cause(hErr, "handle connection"))
+					stream.Close()
+					s.logger.ErrorContext(streamCtx, E.Cause(hErr, "process multiplex stream"))
 				}
 			}()
 		}
@@ -83,13 +108,13 @@ func (s *Service) NewConnection(ctx context.Context, conn net.Conn, metadata M.M
 	return group.Run(ctx)
 }
 
-func (s *Service) newConnection(ctx context.Context, sessionConn net.Conn, stream net.Conn, metadata M.Metadata) error {
+func (s *Service) newSession(ctx context.Context, sessionConn net.Conn, stream net.Conn, source M.Socksaddr) error {
 	stream = &wrapStream{stream}
 	request, err := ReadStreamRequest(stream)
 	if err != nil {
 		return E.Cause(err, "read multiplex stream request")
 	}
-	metadata.Destination = request.Destination
+	destination := request.Destination
 	if request.Network == N.NetworkTCP {
 		conn := &serverConn{ExtendedConn: bufio.NewExtendedConn(stream)}
 		if request.Destination.Fqdn == BrutalExchangeDomain {
@@ -127,20 +152,28 @@ func (s *Service) newConnection(ctx context.Context, sessionConn net.Conn, strea
 			}
 			return nil
 		}
-		s.logger.InfoContext(ctx, "inbound multiplex connection to ", metadata.Destination)
-		s.handler.NewConnection(ctx, conn, metadata)
-		stream.Close()
+		s.logger.InfoContext(ctx, "inbound multiplex connection to ", destination)
+		if s.handler != nil {
+			//nolint:staticcheck
+			s.handler.NewConnection(ctx, conn, M.Metadata{Source: source, Destination: destination})
+		} else {
+			s.handlerEx.NewConnectionEx(ctx, conn, source, destination, nil)
+		}
 	} else {
 		var packetConn N.PacketConn
 		if !request.PacketAddr {
-			s.logger.InfoContext(ctx, "inbound multiplex packet connection to ", metadata.Destination)
+			s.logger.InfoContext(ctx, "inbound multiplex packet connection to ", destination)
 			packetConn = &serverPacketConn{ExtendedConn: bufio.NewExtendedConn(stream), destination: request.Destination}
 		} else {
 			s.logger.InfoContext(ctx, "inbound multiplex packet connection")
 			packetConn = &serverPacketAddrConn{ExtendedConn: bufio.NewExtendedConn(stream)}
 		}
-		s.handler.NewPacketConnection(ctx, packetConn, metadata)
-		stream.Close()
+		if s.handler != nil {
+			//nolint:staticcheck
+			s.handler.NewPacketConnection(ctx, packetConn, M.Metadata{Source: source, Destination: destination})
+		} else {
+			s.handlerEx.NewPacketConnectionEx(ctx, packetConn, source, destination, nil)
+		}
 	}
 	return nil
 }

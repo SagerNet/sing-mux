@@ -63,11 +63,10 @@ func (s *Service) NewConnection(ctx context.Context, conn net.Conn, metadata M.M
 	}
 	var group task.Group
 	group.Append0(func(_ context.Context) error {
-		var stream net.Conn
 		for {
-			stream, err = session.Accept()
-			if err != nil {
-				return err
+			stream, aErr := session.Accept()
+			if aErr != nil {
+				return aErr
 			}
 			streamCtx := s.newStreamContext(ctx, stream)
 			go func() {

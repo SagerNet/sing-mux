@@ -107,13 +107,15 @@ func EncodeRequest(request Request, payload []byte) *buf.Buffer {
 }
 
 const (
-	flagUDP       = 1
-	flagAddr      = 2
-	statusSuccess = 0
-	statusError   = 1
+	StreamVersion1 = 1
+	flagUDP        = 1
+	flagAddr       = 2
+	statusSuccess  = 0
+	statusError    = 1
 )
 
 type StreamRequest struct {
+	Version     byte
 	Network     string
 	Destination M.Socksaddr
 	PacketAddr  bool
@@ -137,18 +139,17 @@ func ReadStreamRequest(reader io.Reader) (*StreamRequest, error) {
 		network = N.NetworkUDP
 		udpAddr = flags&flagAddr != 0
 	}
-	return &StreamRequest{network, destination, udpAddr}, nil
+	return &StreamRequest{Network: network, Destination: destination, PacketAddr: udpAddr}, nil
 }
 
 func streamRequestLen(request StreamRequest) int {
 	var rLen int
-	rLen += 1 // version
 	rLen += 2 // flags
 	rLen += M.SocksaddrSerializer.AddrPortLen(request.Destination)
 	return rLen
 }
 
-func EncodeStreamRequest(request StreamRequest, buffer *buf.Buffer) error {
+func EncodeStreamRequest(request StreamRequest, buffer *buf.Buffer) {
 	destination := request.Destination
 	var flags uint16
 	if request.Network == N.NetworkUDP {
@@ -161,7 +162,7 @@ func EncodeStreamRequest(request StreamRequest, buffer *buf.Buffer) error {
 		}
 	}
 	common.Must(binary.Write(buffer, binary.BigEndian, flags))
-	return M.SocksaddrSerializer.WriteAddrPort(buffer, destination)
+	common.Must(M.SocksaddrSerializer.WriteAddrPort(buffer, destination))
 }
 
 type StreamResponse struct {

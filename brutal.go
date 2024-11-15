@@ -15,8 +15,10 @@ const (
 	BrutalMinSpeedBPS    = 65536
 )
 
-func WriteBrutalRequest(writer io.Writer, receiveBPS uint64) error {
-	return binary.Write(writer, binary.BigEndian, receiveBPS)
+func EncodeBrutalRequest(receiveBPS uint64) *buf.Buffer {
+	buffer := buf.NewSize(8)
+	common.Must(binary.Write(buffer, binary.BigEndian, receiveBPS))
+	return buffer
 }
 
 func ReadBrutalRequest(reader io.Reader) (uint64, error) {

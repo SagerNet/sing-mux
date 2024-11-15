@@ -2,16 +2,23 @@ package mux
 
 import (
 	"context"
+	"encoding/binary"
 	"net"
 	"sync"
 
 	"github.com/sagernet/sing/common"
+	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/x/list"
+)
+
+var (
+	_ N.Dialer        = (*Client)(nil)
+	_ N.PayloadDialer = (*Client)(nil)
 )
 
 type Client struct {
@@ -74,17 +81,70 @@ func NewClient(options Options) (*Client, error) {
 }
 
 func (c *Client) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+	return c.DialPayloadContext(ctx, network, destination, nil)
+}
+
+func (c *Client) DialPayloadContext(ctx context.Context, network string, destination M.Socksaddr, payloads []*buf.Buffer) (net.Conn, error) {
 	switch N.NetworkName(network) {
 	case N.NetworkTCP:
 		stream, err := c.openStream(ctx)
 		if err != nil {
+			buf.ReleaseMulti(payloads)
 			return nil, err
 		}
-		return &clientConn{Conn: stream, destination: destination}, nil
+		request := StreamRequest{
+			Network:     N.NetworkTCP,
+			Destination: destination,
+		}
+		buffer := buf.NewSize(streamRequestLen(request) + buf.LenMulti(payloads))
+		defer buffer.Release()
+		EncodeStreamRequest(request, buffer)
+		for _, payload := range payloads {
+			buffer.Write(payload.Bytes())
+			payload.Release()
+		}
+		_, err = stream.Write(buffer.Bytes())
+		if err != nil {
+			stream.Close()
+			return nil, E.Cause(err, "write multiplex handshake request")
+		}
+		response, err := ReadStreamResponse(stream)
+		if err != nil {
+			return nil, E.Cause(err, "read multiplex handshake response")
+		}
+		if response.Status == statusError {
+			return nil, E.New("remote error: " + response.Message)
+		}
+		return stream, nil
 	case N.NetworkUDP:
 		stream, err := c.openStream(ctx)
 		if err != nil {
+			buf.ReleaseMulti(payloads)
 			return nil, err
+		}
+		request := StreamRequest{
+			Network:     N.NetworkUDP,
+			Destination: destination,
+		}
+		buffer := buf.NewSize(streamRequestLen(request) + 2*len(payloads) + buf.LenMulti(payloads))
+		defer buffer.Release()
+		EncodeStreamRequest(request, buffer)
+		for _, packetPayload := range payloads {
+			binary.Write(buffer, binary.BigEndian, uint16(packetPayload.Len()))
+			buffer.Write(packetPayload.Bytes())
+			packetPayload.Release()
+		}
+		_, err = stream.Write(buffer.Bytes())
+		if err != nil {
+			stream.Close()
+			return nil, E.Cause(err, "write multiplex handshake request")
+		}
+		response, err := ReadStreamResponse(stream)
+		if err != nil {
+			return nil, E.Cause(err, "read multiplex handshake response")
+		}
+		if response.Status == statusError {
+			return nil, E.New("remote error: " + response.Message)
 		}
 		extendedConn := bufio.NewExtendedConn(stream)
 		return &clientPacketConn{AbstractConn: extendedConn, conn: extendedConn, destination: destination}, nil
@@ -97,6 +157,26 @@ func (c *Client) ListenPacket(ctx context.Context, destination M.Socksaddr) (net
 	stream, err := c.openStream(ctx)
 	if err != nil {
 		return nil, err
+	}
+	request := StreamRequest{
+		Network:     N.NetworkUDP,
+		Destination: destination,
+		PacketAddr:  true,
+	}
+	buffer := buf.NewSize(streamRequestLen(request))
+	defer buffer.Release()
+	EncodeStreamRequest(request, buffer)
+	_, err = stream.Write(buffer.Bytes())
+	if err != nil {
+		stream.Close()
+		return nil, E.Cause(err, "write multiplex handshake request")
+	}
+	response, err := ReadStreamResponse(stream)
+	if err != nil {
+		return nil, E.Cause(err, "read multiplex handshake response")
+	}
+	if response.Status == statusError {
+		return nil, E.New("remote error: " + response.Message)
 	}
 	extendedConn := bufio.NewExtendedConn(stream)
 	return &clientPacketAddrConn{AbstractConn: extendedConn, conn: extendedConn, destination: destination}, nil
@@ -194,7 +274,7 @@ func (c *Client) offerNew(ctx context.Context) (abstractSession, error) {
 		return nil, err
 	}
 	if c.brutal.Enabled {
-		err = c.brutalExchange(ctx, conn, session)
+		err = c.brutalExchange(ctx, conn)
 		if err != nil {
 			conn.Close()
 			session.Close()
@@ -205,21 +285,16 @@ func (c *Client) offerNew(ctx context.Context) (abstractSession, error) {
 	return session, nil
 }
 
-func (c *Client) brutalExchange(ctx context.Context, sessionConn net.Conn, session abstractSession) error {
-	stream, err := session.Open()
+func (c *Client) brutalExchange(ctx context.Context, sessionConn net.Conn) error {
+	stream, err := c.DialPayloadContext(ctx, N.NetworkTCP, M.Socksaddr{Fqdn: BrutalExchangeDomain}, []*buf.Buffer{EncodeBrutalRequest(c.brutal.SendBPS)})
 	if err != nil {
 		return err
 	}
-	conn := &clientConn{Conn: &wrapStream{stream}, destination: M.Socksaddr{Fqdn: BrutalExchangeDomain}}
-	err = WriteBrutalRequest(conn, c.brutal.ReceiveBPS)
+	serverReceiveBPS, err := ReadBrutalResponse(stream)
 	if err != nil {
 		return err
 	}
-	serverReceiveBPS, err := ReadBrutalResponse(conn)
-	if err != nil {
-		return err
-	}
-	conn.Close()
+	stream.Close()
 	sendBPS := c.brutal.SendBPS
 	if serverReceiveBPS < sendBPS {
 		sendBPS = serverReceiveBPS

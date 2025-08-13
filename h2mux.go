@@ -252,7 +252,8 @@ func (s *h2MuxClientSession) Close() error {
 func (s *h2MuxClientSession) IsClosed() bool {
 	s.access.RLock()
 	defer s.access.RUnlock()
-	return s.closed || s.clientConn.State().Closed
+	state := s.clientConn.State()
+	return s.closed || state.Closed || state.Closing
 }
 
 func (s *h2MuxClientSession) CanTakeNewRequest() bool {

@@ -64,6 +64,10 @@ func (c *httpConn) Close() error {
 	return common.Close(c.reader, c.writer)
 }
 
+func (c *httpConn) CloseWrite() error {
+	return common.Close(c.writer)
+}
+
 func (c *httpConn) LocalAddr() net.Addr {
 	return M.Socksaddr{}
 }

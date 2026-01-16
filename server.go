@@ -66,7 +66,9 @@ func (s *Service) NewConnection(ctx context.Context, conn net.Conn, metadata M.M
 func (s *Service) NewConnectionEx(ctx context.Context, conn net.Conn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
 	err := s.newConnection(ctx, conn, source)
 	N.CloseOnHandshakeFailure(conn, onClose, err)
-	if err != nil {
+	if E.IsClosedOrCanceled(err) {
+		s.logger.DebugContext(ctx, "connection closed: ", err)
+	} else {
 		s.logger.ErrorContext(ctx, E.Cause(err, "process multiplex connection from ", source))
 	}
 }

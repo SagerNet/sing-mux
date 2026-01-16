@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/hashicorp/yamux"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -80,7 +81,11 @@ func (c *Client) DialContext(ctx context.Context, network string, destination M.
 		if err != nil {
 			return nil, err
 		}
-		return &clientConn{Conn: stream, destination: destination}, nil
+		conn := &clientConn{Conn: stream, destination: destination}
+		if c.protocol == ProtocolH2Mux || c.protocol == ProtocolYAMux {
+			return &clientConnWithCloseWrite{clientConn: conn}, nil
+		}
+		return conn, nil
 	case N.NetworkUDP:
 		stream, err := c.openStream(ctx)
 		if err != nil {
@@ -121,6 +126,12 @@ func (c *Client) openStream(ctx context.Context) (net.Conn, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if yamuxStream, ok := stream.(*yamux.Stream); ok {
+		return &yamuxWrapStream{yamuxStream}, nil
+	}
+	if c.protocol == ProtocolH2Mux {
+		return newWrapStreamCloseWrite(stream), nil
 	}
 	return &wrapStream{stream}, nil
 }

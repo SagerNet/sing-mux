@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 
+	"github.com/hashicorp/yamux"
 	"github.com/sagernet/sing/common/bufio"
 	"github.com/sagernet/sing/common/debug"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -111,7 +112,11 @@ func (s *Service) newConnection(ctx context.Context, conn net.Conn, source M.Soc
 }
 
 func (s *Service) newSession(ctx context.Context, sessionConn net.Conn, stream net.Conn, source M.Socksaddr) error {
-	stream = &wrapStream{stream}
+	if yamuxStream, ok := stream.(*yamux.Stream); ok {
+		stream = &yamuxWrapStream{yamuxStream}
+	} else {
+		stream = &wrapStream{stream}
+	}
 	request, err := ReadStreamRequest(stream)
 	if err != nil {
 		return E.Cause(err, "read multiplex stream request")

@@ -93,7 +93,11 @@ func (c *clientConn) Upstream() any {
 	return c.Conn
 }
 
-func (c *clientConn) CloseWrite() error {
+type clientConnWithCloseWrite struct {
+	*clientConn
+}
+
+func (c *clientConnWithCloseWrite) CloseWrite() error {
 	return N.CloseWrite(c.Conn)
 }
 

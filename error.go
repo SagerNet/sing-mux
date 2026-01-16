@@ -5,7 +5,6 @@ import (
 	"net"
 
 	"github.com/hashicorp/yamux"
-	N "github.com/sagernet/sing/common/network"
 )
 
 type wrapStream struct {
@@ -24,12 +23,23 @@ func (w *wrapStream) Write(p []byte) (n int, err error) {
 	return
 }
 
-func (w *wrapStream) CloseWrite() error {
-	return N.CloseWrite(w.Conn)
-}
-
 func (w *wrapStream) Upstream() any {
 	return w.Conn
+}
+
+type wrapStreamCloseWrite struct {
+	*wrapStream
+}
+
+func newWrapStreamCloseWrite(conn net.Conn) *wrapStreamCloseWrite {
+	return &wrapStreamCloseWrite{wrapStream: &wrapStream{Conn: conn}}
+}
+
+func (w *wrapStreamCloseWrite) CloseWrite() error {
+	if c, ok := w.Conn.(interface{ CloseWrite() error }); ok {
+		return c.CloseWrite()
+	}
+	return nil
 }
 
 func wrapError(err error) error {

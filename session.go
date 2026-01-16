@@ -100,6 +100,30 @@ func (y *yamuxSession) CanTakeNewRequest() bool {
 	return true
 }
 
+type yamuxWrapStream struct {
+	*yamux.Stream
+}
+
+func (w *yamuxWrapStream) Read(p []byte) (n int, err error) {
+	n, err = w.Stream.Read(p)
+	return n, wrapError(err)
+}
+
+func (w *yamuxWrapStream) Write(p []byte) (n int, err error) {
+	n, err = w.Stream.Write(p)
+	return n, wrapError(err)
+}
+
+func (w *yamuxWrapStream) CloseWrite() error {
+	// yamux.Stream.Close() implements half-close semantics:
+	// sends FIN, state becomes streamLocalClose, can still read
+	return w.Stream.Close()
+}
+
+func (w *yamuxWrapStream) Upstream() any {
+	return w.Stream
+}
+
 func smuxConfig() *smux.Config {
 	config := smux.DefaultConfig()
 	config.KeepAliveDisabled = true

@@ -112,15 +112,11 @@ func (c *serverPacketConn) ReadPacket(buffer *buf.Buffer) (destination M.Socksad
 }
 
 func (c *serverPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr) error {
+	c.access.Lock()
+	defer c.access.Unlock()
 	pLen := buffer.Len()
 	common.Must(binary.Write(buf.With(buffer.ExtendHeader(2)), binary.BigEndian, uint16(pLen)))
 	if !c.responseWritten {
-		c.access.Lock()
-		if c.responseWritten {
-			c.access.Unlock()
-		} else {
-			defer c.access.Unlock()
-		}
 		buffer.ExtendHeader(1)[0] = statusSuccess
 		c.responseWritten = true
 	}
@@ -141,18 +137,14 @@ func (c *serverPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) 
 }
 
 func (c *serverPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+	c.access.Lock()
+	defer c.access.Unlock()
 	if !c.responseWritten {
-		c.access.Lock()
-		if c.responseWritten {
-			c.access.Unlock()
-		} else {
-			defer c.access.Unlock()
-			_, err = c.ExtendedConn.Write([]byte{statusSuccess})
-			if err != nil {
-				return
-			}
-			c.responseWritten = true
+		_, err = c.ExtendedConn.Write([]byte{statusSuccess})
+		if err != nil {
+			return
 		}
+		c.responseWritten = true
 	}
 	err = binary.Write(c.ExtendedConn, binary.BigEndian, uint16(len(p)))
 	if err != nil {
@@ -220,18 +212,14 @@ func (c *serverPacketAddrConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 }
 
 func (c *serverPacketAddrConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+	c.access.Lock()
+	defer c.access.Unlock()
 	if !c.responseWritten {
-		c.access.Lock()
-		if c.responseWritten {
-			c.access.Unlock()
-		} else {
-			defer c.access.Unlock()
-			_, err = c.ExtendedConn.Write([]byte{statusSuccess})
-			if err != nil {
-				return
-			}
-			c.responseWritten = true
+		_, err = c.ExtendedConn.Write([]byte{statusSuccess})
+		if err != nil {
+			return
 		}
+		c.responseWritten = true
 	}
 	err = M.SocksaddrSerializer.WriteAddrPort(c.ExtendedConn, M.SocksaddrFromNet(addr))
 	if err != nil {
@@ -262,6 +250,8 @@ func (c *serverPacketAddrConn) ReadPacket(buffer *buf.Buffer) (destination M.Soc
 }
 
 func (c *serverPacketAddrConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr) error {
+	c.access.Lock()
+	defer c.access.Unlock()
 	pLen := buffer.Len()
 	common.Must(binary.Write(buf.With(buffer.ExtendHeader(2)), binary.BigEndian, uint16(pLen)))
 	err := M.SocksaddrSerializer.WriteAddrPort(buf.With(buffer.ExtendHeader(M.SocksaddrSerializer.AddrPortLen(destination))), destination)
@@ -269,14 +259,8 @@ func (c *serverPacketAddrConn) WritePacket(buffer *buf.Buffer, destination M.Soc
 		return err
 	}
 	if !c.responseWritten {
-		c.access.Lock()
-		if c.responseWritten {
-			c.access.Unlock()
-		} else {
-			defer c.access.Unlock()
-			buffer.ExtendHeader(1)[0] = statusSuccess
-			c.responseWritten = true
-		}
+		buffer.ExtendHeader(1)[0] = statusSuccess
+		c.responseWritten = true
 	}
 	return c.ExtendedConn.WriteBuffer(buffer)
 }

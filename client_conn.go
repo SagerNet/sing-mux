@@ -177,14 +177,10 @@ func (c *clientPacketConn) writeRequest(payload []byte) (n int, err error) {
 }
 
 func (c *clientPacketConn) Write(b []byte) (n int, err error) {
+	c.access.Lock()
+	defer c.access.Unlock()
 	if !c.requestWritten {
-		c.access.Lock()
-		if c.requestWritten {
-			c.access.Unlock()
-		} else {
-			defer c.access.Unlock()
-			return c.writeRequest(b)
-		}
+		return c.writeRequest(b)
 	}
 	err = binary.Write(c.conn, binary.BigEndian, uint16(len(b)))
 	if err != nil {
@@ -211,15 +207,11 @@ func (c *clientPacketConn) ReadBuffer(buffer *buf.Buffer) (err error) {
 }
 
 func (c *clientPacketConn) WriteBuffer(buffer *buf.Buffer) error {
+	c.access.Lock()
+	defer c.access.Unlock()
 	if !c.requestWritten {
-		c.access.Lock()
-		if c.requestWritten {
-			c.access.Unlock()
-		} else {
-			defer c.access.Unlock()
-			defer buffer.Release()
-			return common.Error(c.writeRequest(buffer.Bytes()))
-		}
+		defer buffer.Release()
+		return common.Error(c.writeRequest(buffer.Bytes()))
 	}
 	bLen := buffer.Len()
 	binary.BigEndian.PutUint16(buffer.ExtendHeader(2), uint16(bLen))
@@ -251,14 +243,10 @@ func (c *clientPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) 
 }
 
 func (c *clientPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+	c.access.Lock()
+	defer c.access.Unlock()
 	if !c.requestWritten {
-		c.access.Lock()
-		if c.requestWritten {
-			c.access.Unlock()
-		} else {
-			defer c.access.Unlock()
-			return c.writeRequest(p)
-		}
+		return c.writeRequest(p)
 	}
 	err = binary.Write(c.conn, binary.BigEndian, uint16(len(p)))
 	if err != nil {
@@ -383,14 +371,10 @@ func (c *clientPacketAddrConn) writeRequest(payload []byte, destination M.Socksa
 }
 
 func (c *clientPacketAddrConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+	c.access.Lock()
+	defer c.access.Unlock()
 	if !c.requestWritten {
-		c.access.Lock()
-		if c.requestWritten {
-			c.access.Unlock()
-		} else {
-			defer c.access.Unlock()
-			return c.writeRequest(p, M.SocksaddrFromNet(addr))
-		}
+		return c.writeRequest(p, M.SocksaddrFromNet(addr))
 	}
 	err = M.SocksaddrSerializer.WriteAddrPort(c.conn, M.SocksaddrFromNet(addr))
 	if err != nil {
@@ -425,15 +409,11 @@ func (c *clientPacketAddrConn) ReadPacket(buffer *buf.Buffer) (destination M.Soc
 }
 
 func (c *clientPacketAddrConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr) error {
+	c.access.Lock()
+	defer c.access.Unlock()
 	if !c.requestWritten {
-		c.access.Lock()
-		if c.requestWritten {
-			c.access.Unlock()
-		} else {
-			defer c.access.Unlock()
-			defer buffer.Release()
-			return common.Error(c.writeRequest(buffer.Bytes(), destination))
-		}
+		defer buffer.Release()
+		return common.Error(c.writeRequest(buffer.Bytes(), destination))
 	}
 	bLen := buffer.Len()
 	header := buf.With(buffer.ExtendHeader(M.SocksaddrSerializer.AddrPortLen(destination) + 2))

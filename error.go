@@ -3,12 +3,23 @@ package mux
 import (
 	"io"
 	"net"
+	"sync"
 
 	"github.com/hashicorp/yamux"
 )
 
 type wrapStream struct {
 	net.Conn
+	closeOnce sync.Once
+	onClose   func()
+}
+
+func (w *wrapStream) Close() error {
+	err := w.Conn.Close()
+	if w.onClose != nil {
+		w.closeOnce.Do(w.onClose)
+	}
+	return err
 }
 
 func (w *wrapStream) Read(p []byte) (n int, err error) {

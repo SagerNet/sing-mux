@@ -113,9 +113,9 @@ func (s *Service) newConnection(ctx context.Context, conn net.Conn, source M.Soc
 
 func (s *Service) newSession(ctx context.Context, sessionConn net.Conn, stream net.Conn, source M.Socksaddr) error {
 	if yamuxStream, ok := stream.(*yamux.Stream); ok {
-		stream = &yamuxWrapStream{yamuxStream}
+		stream = &yamuxWrapStream{Stream: yamuxStream}
 	} else {
-		stream = &wrapStream{stream}
+		stream = &wrapStream{Conn: stream}
 	}
 	request, err := ReadStreamRequest(stream)
 	if err != nil {

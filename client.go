@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/hashicorp/yamux"
 	"github.com/sagernet/sing/common"
@@ -24,8 +25,26 @@ type Client struct {
 	maxStreams     int
 	padding        bool
 	access         sync.Mutex
-	connections    list.List[abstractSession]
+	connections    list.List[*clientSession]
 	brutal         BrutalOptions
+	closeIdle      atomic.Bool
+}
+
+type clientSession struct {
+	abstractSession
+	element *list.Element[*clientSession]
+	streams int
+}
+
+type keepSessionKey struct{}
+
+func ContextWithKeepSession(ctx context.Context) context.Context {
+	return context.WithValue(ctx, (*keepSessionKey)(nil), true)
+}
+
+func keepSessionFromContext(ctx context.Context) bool {
+	keep, _ := ctx.Value((*keepSessionKey)(nil)).(bool)
+	return keep
 }
 
 type Options struct {
@@ -109,7 +128,7 @@ func (c *Client) ListenPacket(ctx context.Context, destination M.Socksaddr) (net
 
 func (c *Client) openStream(ctx context.Context) (net.Conn, error) {
 	var (
-		session abstractSession
+		session *clientSession
 		stream  net.Conn
 		err     error
 	)
@@ -120,6 +139,7 @@ func (c *Client) openStream(ctx context.Context) (net.Conn, error) {
 		}
 		stream, err = session.Open()
 		if err != nil {
+			c.releaseStream(session, false)
 			continue
 		}
 		break
@@ -127,23 +147,30 @@ func (c *Client) openStream(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	keepSession := keepSessionFromContext(ctx)
+	onClose := func() {
+		c.releaseStream(session, keepSession)
+	}
 	if yamuxStream, ok := stream.(*yamux.Stream); ok {
-		return &yamuxWrapStream{yamuxStream}, nil
+		return &yamuxWrapStream{Stream: yamuxStream, onClose: onClose}, nil
 	}
 	if c.protocol == ProtocolH2Mux {
-		return newWrapStreamCloseWrite(stream), nil
+		wrapped := newWrapStreamCloseWrite(stream)
+		wrapped.onClose = onClose
+		return wrapped, nil
 	}
-	return &wrapStream{stream}, nil
+	return &wrapStream{Conn: stream, onClose: onClose}, nil
 }
 
-func (c *Client) offer(ctx context.Context) (abstractSession, error) {
+func (c *Client) offer(ctx context.Context) (*clientSession, error) {
 	c.access.Lock()
 	defer c.access.Unlock()
 
-	var sessions []abstractSession
+	var sessions []*clientSession
 	for element := c.connections.Front(); element != nil; {
 		if element.Value.IsClosed() {
 			element.Value.Close()
+			element.Value.element = nil
 			nextElement := element.Next()
 			c.connections.Remove(element)
 			element = nextElement
@@ -152,33 +179,64 @@ func (c *Client) offer(ctx context.Context) (abstractSession, error) {
 		sessions = append(sessions, element.Value)
 		element = element.Next()
 	}
-	if c.brutal.Enabled {
-		if len(sessions) > 0 {
-			return sessions[0], nil
-		}
-		return c.offerNew(ctx)
-	}
-	session := common.MinBy(common.Filter(sessions, abstractSession.CanTakeNewRequest), abstractSession.NumStreams)
+	session := c.selectSession(sessions)
 	if session == nil {
-		return c.offerNew(ctx)
-	}
-	numStreams := session.NumStreams()
-	if numStreams == 0 {
-		return session, nil
-	}
-	if c.maxConnections > 0 {
-		if len(sessions) >= c.maxConnections || numStreams < c.minStreams {
-			return session, nil
-		}
-	} else {
-		if c.maxStreams > 0 && numStreams < c.maxStreams {
-			return session, nil
+		var err error
+		session, err = c.offerNew(ctx)
+		if err != nil {
+			return nil, err
 		}
 	}
-	return c.offerNew(ctx)
+	session.streams++
+	return session, nil
 }
 
-func (c *Client) offerNew(ctx context.Context) (abstractSession, error) {
+func (c *Client) selectSession(sessions []*clientSession) *clientSession {
+	if c.brutal.Enabled {
+		if len(sessions) > 0 {
+			return sessions[0]
+		}
+		return nil
+	}
+	session := common.MinBy(common.Filter(sessions, func(it *clientSession) bool {
+		return it.CanTakeNewRequest()
+	}), func(it *clientSession) int {
+		return it.streams
+	})
+	if session == nil {
+		return nil
+	}
+	if session.streams == 0 {
+		return session
+	}
+	if c.maxConnections > 0 {
+		if len(sessions) >= c.maxConnections || session.streams < c.minStreams {
+			return session
+		}
+	} else {
+		if c.maxStreams > 0 && session.streams < c.maxStreams {
+			return session
+		}
+	}
+	return nil
+}
+
+func (c *Client) releaseStream(session *clientSession, keepSession bool) {
+	c.access.Lock()
+	session.streams--
+	if session.streams > 0 || keepSession || !c.closeIdle.Load() {
+		c.access.Unlock()
+		return
+	}
+	if session.element != nil {
+		c.connections.Remove(session.element)
+		session.element = nil
+	}
+	c.access.Unlock()
+	session.Close()
+}
+
+func (c *Client) offerNew(ctx context.Context) (*clientSession, error) {
 	ctx, cancel := context.WithTimeout(ctx, TCPTimeout)
 	defer cancel()
 	conn, err := c.dialer.DialContext(ctx, N.NetworkTCP, Destination)
@@ -212,8 +270,9 @@ func (c *Client) offerNew(ctx context.Context) (abstractSession, error) {
 			return nil, E.Cause(err, "brutal exchange")
 		}
 	}
-	c.connections.PushBack(session)
-	return session, nil
+	wrapped := &clientSession{abstractSession: session}
+	wrapped.element = c.connections.PushBack(wrapped)
+	return wrapped, nil
 }
 
 func (c *Client) brutalExchange(ctx context.Context, sessionConn net.Conn, session abstractSession) error {
@@ -221,7 +280,7 @@ func (c *Client) brutalExchange(ctx context.Context, sessionConn net.Conn, sessi
 	if err != nil {
 		return err
 	}
-	conn := &clientConn{Conn: &wrapStream{stream}, destination: M.Socksaddr{Fqdn: BrutalExchangeDomain}}
+	conn := &clientConn{Conn: &wrapStream{Conn: stream}, destination: M.Socksaddr{Fqdn: BrutalExchangeDomain}}
 	err = WriteBrutalRequest(conn, c.brutal.ReceiveBPS)
 	if err != nil {
 		return err
@@ -246,9 +305,36 @@ func (c *Client) Reset() {
 	c.access.Lock()
 	defer c.access.Unlock()
 	for _, session := range c.connections.Array() {
+		session.element = nil
 		session.Close()
 	}
 	c.connections.Init()
+}
+
+func (c *Client) SetKeepIdleConnections(keep bool) {
+	c.closeIdle.Store(!keep)
+	if !keep {
+		c.CloseIdleConnections()
+	}
+}
+
+func (c *Client) CloseIdleConnections() {
+	c.access.Lock()
+	var closing []*clientSession
+	for element := c.connections.Front(); element != nil; {
+		nextElement := element.Next()
+		session := element.Value
+		if session.streams == 0 {
+			c.connections.Remove(element)
+			session.element = nil
+			closing = append(closing, session)
+		}
+		element = nextElement
+	}
+	c.access.Unlock()
+	for _, session := range closing {
+		session.Close()
+	}
 }
 
 func (c *Client) Close() error {

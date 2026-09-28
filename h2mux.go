@@ -25,11 +25,12 @@ const idleTimeout = 30 * time.Second
 var _ abstractSession = (*h2MuxServerSession)(nil)
 
 type h2MuxServerSession struct {
-	server  http2.Server
-	active  atomic.Int32
-	conn    net.Conn
-	inbound chan net.Conn
-	done    chan struct{}
+	server    http2.Server
+	active    atomic.Int32
+	conn      net.Conn
+	inbound   chan net.Conn
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 func newH2MuxServer(conn net.Conn) *h2MuxServerSession {
@@ -56,7 +57,12 @@ func (s *h2MuxServerSession) ServeHTTP(writer http.ResponseWriter, request *http
 	defer s.active.Add(-1)
 	writer.WriteHeader(http.StatusOK)
 	conn := newHTTP2Wrapper(newHTTPConn(request.Body, writer), writer.(http.Flusher))
-	s.inbound <- conn
+	select {
+	case s.inbound <- conn:
+	case <-s.done:
+		_ = conn.Close()
+		return
+	}
 	select {
 	case <-conn.done:
 	case <-s.done:
@@ -82,11 +88,9 @@ func (s *h2MuxServerSession) NumStreams() int {
 }
 
 func (s *h2MuxServerSession) Close() error {
-	select {
-	case <-s.done:
-	default:
+	s.closeOnce.Do(func() {
 		close(s.done)
-	}
+	})
 	return s.conn.Close()
 }
 

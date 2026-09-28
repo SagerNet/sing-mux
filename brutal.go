@@ -51,11 +51,11 @@ func ReadBrutalResponse(reader io.Reader) (uint64, error) {
 		err = binary.Read(reader, binary.BigEndian, &receiveBPS)
 		return receiveBPS, err
 	} else {
-		var message string
-		message, err = varbin.ReadValue[string](reader, binary.BigEndian)
+		var message []byte
+		message, err = varbin.ReadSlice[byte](varbin.StubReader(reader), binary.BigEndian)
 		if err != nil {
 			return 0, err
 		}
-		return 0, E.New("remote error: ", message)
+		return 0, E.New("remote error: ", string(message))
 	}
 }

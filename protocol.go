@@ -176,10 +176,12 @@ func ReadStreamResponse(reader io.Reader) (*StreamResponse, error) {
 		return nil, err
 	}
 	if response.Status == statusError {
-		response.Message, err = varbin.ReadValue[string](reader, binary.BigEndian)
+		var message []byte
+		message, err = varbin.ReadSlice[byte](varbin.StubReader(reader), binary.BigEndian)
 		if err != nil {
 			return nil, err
 		}
+		response.Message = string(message)
 	}
 	return &response, nil
 }

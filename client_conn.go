@@ -269,7 +269,7 @@ func (c *clientPacketConn) LocalAddr() net.Addr {
 }
 
 func (c *clientPacketConn) RemoteAddr() net.Addr {
-	return c.destination.UDPAddr()
+	return c.destination
 }
 
 func (c *clientPacketConn) NeedAdditionalReadDeadline() bool {

@@ -41,13 +41,13 @@ func (c *protocolConn) Write(p []byte) (n int, err error) {
 		return c.Conn.Write(p)
 	}
 	buffer := EncodeRequest(c.request, p)
-	n, err = c.Conn.Write(buffer.Bytes())
+	_, err = c.Conn.Write(buffer.Bytes())
 	buffer.Release()
-	if err == nil {
-		n--
-	}
 	c.requestWritten = true
-	return n, err
+	if err != nil {
+		return
+	}
+	return len(p), nil
 }
 
 func (c *protocolConn) Upstream() any {

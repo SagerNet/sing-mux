@@ -3,7 +3,6 @@ package mux
 import (
 	"context"
 	"net"
-	"sync"
 	"sync/atomic"
 
 	"github.com/hashicorp/yamux"
@@ -24,7 +23,7 @@ type Client struct {
 	minStreams     int
 	maxStreams     int
 	padding        bool
-	access         sync.Mutex
+	access         chan struct{}
 	connections    list.List[*clientSession]
 	brutal         BrutalOptions
 	closeIdle      atomic.Bool
@@ -72,6 +71,7 @@ func NewClient(options Options) (*Client, error) {
 		minStreams:     options.MinStreams,
 		maxStreams:     options.MaxStreams,
 		padding:        options.Padding,
+		access:         make(chan struct{}, 1),
 		brutal:         options.Brutal,
 	}
 	if client.dialer == nil {
@@ -133,6 +133,9 @@ func (c *Client) openStream(ctx context.Context) (net.Conn, error) {
 		err     error
 	)
 	for attempts := 0; attempts < 2; attempts++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		session, err = c.offer(ctx)
 		if err != nil {
 			continue
@@ -162,9 +165,36 @@ func (c *Client) openStream(ctx context.Context) (net.Conn, error) {
 	return &wrapStream{Conn: stream, onClose: onClose}, nil
 }
 
+func (c *Client) lockSessionContext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case c.access <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	// Cancellation and acquisition may both have been ready.
+	if err := ctx.Err(); err != nil {
+		c.unlockSession()
+		return err
+	}
+	return nil
+}
+
+func (c *Client) lockSession() {
+	c.access <- struct{}{}
+}
+
+func (c *Client) unlockSession() {
+	<-c.access
+}
+
 func (c *Client) offer(ctx context.Context) (*clientSession, error) {
-	c.access.Lock()
-	defer c.access.Unlock()
+	if err := c.lockSessionContext(ctx); err != nil {
+		return nil, err
+	}
+	defer c.unlockSession()
 
 	var sessions []*clientSession
 	for element := c.connections.Front(); element != nil; {
@@ -222,17 +252,17 @@ func (c *Client) selectSession(sessions []*clientSession) *clientSession {
 }
 
 func (c *Client) releaseStream(session *clientSession, keepSession bool) {
-	c.access.Lock()
+	c.lockSession()
 	session.streams--
 	if session.streams > 0 || keepSession || !c.closeIdle.Load() {
-		c.access.Unlock()
+		c.unlockSession()
 		return
 	}
 	if session.element != nil {
 		c.connections.Remove(session.element)
 		session.element = nil
 	}
-	c.access.Unlock()
+	c.unlockSession()
 	session.Close()
 }
 
@@ -302,8 +332,8 @@ func (c *Client) brutalExchange(ctx context.Context, sessionConn net.Conn, sessi
 }
 
 func (c *Client) Reset() {
-	c.access.Lock()
-	defer c.access.Unlock()
+	c.lockSession()
+	defer c.unlockSession()
 	for _, session := range c.connections.Array() {
 		session.element = nil
 		session.Close()
@@ -319,7 +349,7 @@ func (c *Client) SetKeepIdleConnections(keep bool) {
 }
 
 func (c *Client) CloseIdleConnections() {
-	c.access.Lock()
+	c.lockSession()
 	var closing []*clientSession
 	for element := c.connections.Front(); element != nil; {
 		nextElement := element.Next()
@@ -331,7 +361,7 @@ func (c *Client) CloseIdleConnections() {
 		}
 		element = nextElement
 	}
-	c.access.Unlock()
+	c.unlockSession()
 	for _, session := range closing {
 		session.Close()
 	}

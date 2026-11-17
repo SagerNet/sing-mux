@@ -1,6 +1,7 @@
 package mux
 
 import (
+	"cmp"
 	"context"
 	"net"
 	"sync"
@@ -96,9 +97,6 @@ func NewClient(options Options) (*Client, error) {
 	}
 	if client.dialer == nil {
 		client.dialer = N.SystemDialer
-	}
-	if client.maxStreams == 0 && client.maxConnections == 0 {
-		client.minStreams = 8
 	}
 	switch options.Protocol {
 	case "", "h2mux":
@@ -241,10 +239,8 @@ func (c *Client) selectSession(sessions []*clientSession) *clientSession {
 		if len(sessions) >= c.maxConnections || session.streams < c.minStreams {
 			return session
 		}
-	} else {
-		if c.maxStreams > 0 && session.streams < c.maxStreams {
-			return session
-		}
+	} else if session.streams < cmp.Or(c.maxStreams, c.minStreams, 8) {
+		return session
 	}
 	return nil
 }

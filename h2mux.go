@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -39,8 +40,9 @@ func newH2MuxServer(conn net.Conn) *h2MuxServerSession {
 		inbound: make(chan net.Conn),
 		done:    make(chan struct{}),
 		server: http2.Server{
-			IdleTimeout:      idleTimeout,
-			MaxReadFrameSize: buf.BufferSize,
+			IdleTimeout:          idleTimeout,
+			MaxReadFrameSize:     buf.BufferSize,
+			MaxConcurrentStreams: math.MaxInt32,
 		},
 	}
 	go func() {

@@ -315,7 +315,13 @@ func (c *Client) dialSession(ctx context.Context) (abstractSession, error) {
 		return nil, err
 	}
 	if c.brutal.Enabled {
-		err = c.brutalExchange(ctx, conn, session)
+		stopClose := context.AfterFunc(ctx, func() {
+			conn.Close()
+		})
+		err = c.brutalExchange(conn, session)
+		if !stopClose() {
+			err = ctx.Err()
+		}
 		if err != nil {
 			conn.Close()
 			session.Close()
@@ -325,7 +331,7 @@ func (c *Client) dialSession(ctx context.Context) (abstractSession, error) {
 	return session, nil
 }
 
-func (c *Client) brutalExchange(ctx context.Context, sessionConn net.Conn, session abstractSession) error {
+func (c *Client) brutalExchange(sessionConn net.Conn, session abstractSession) error {
 	stream, err := session.Open()
 	if err != nil {
 		return err

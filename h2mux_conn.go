@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/sagernet/sing/common"
@@ -18,6 +19,8 @@ type httpConn struct {
 	create chan struct{}
 	err    error
 	cancel context.CancelFunc
+	access sync.Mutex
+	closed bool
 }
 
 func newHTTPConn(reader io.Reader, writer io.Writer) *httpConn {
@@ -36,9 +39,19 @@ func newLateHTTPConn(writer io.Writer, cancel context.CancelFunc) *httpConn {
 }
 
 func (c *httpConn) setup(reader io.Reader, err error) {
-	c.reader = reader
-	c.err = err
+	c.access.Lock()
+	closed := c.closed
+	if closed {
+		c.err = net.ErrClosed
+	} else {
+		c.reader = reader
+		c.err = err
+	}
 	close(c.create)
+	c.access.Unlock()
+	if closed {
+		common.Close(reader)
+	}
 }
 
 func (c *httpConn) Read(b []byte) (n int, err error) {
@@ -58,18 +71,16 @@ func (c *httpConn) Write(b []byte) (n int, err error) {
 }
 
 func (c *httpConn) Close() error {
+	c.access.Lock()
+	if c.closed {
+		c.access.Unlock()
+		return net.ErrClosed
+	}
+	c.closed = true
+	reader := c.reader
+	c.access.Unlock()
 	if c.cancel != nil {
 		c.cancel()
-	}
-	var reader io.Reader
-	if c.create != nil {
-		select {
-		case <-c.create:
-			reader = c.reader
-		default:
-		}
-	} else {
-		reader = c.reader
 	}
 	return common.Close(reader, c.writer)
 }

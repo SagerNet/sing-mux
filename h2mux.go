@@ -40,9 +40,10 @@ func newH2MuxServer(conn net.Conn) *h2MuxServerSession {
 		inbound: make(chan net.Conn),
 		done:    make(chan struct{}),
 		server: http2.Server{
-			IdleTimeout:          idleTimeout,
-			MaxReadFrameSize:     buf.BufferSize,
-			MaxConcurrentStreams: math.MaxInt32,
+			IdleTimeout:                  idleTimeout,
+			MaxReadFrameSize:             buf.BufferSize,
+			MaxConcurrentStreams:         math.MaxInt32,
+			MaxUploadBufferPerConnection: 1 << 30,
 		},
 	}
 	go func() {

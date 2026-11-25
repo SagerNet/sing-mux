@@ -26,16 +26,22 @@ func ReadBrutalRequest(reader io.Reader) (uint64, error) {
 }
 
 func WriteBrutalResponse(writer io.Writer, receiveBPS uint64, ok bool, message string) error {
-	buffer := buf.New()
+	var bufferLen int
+	if ok {
+		bufferLen = 1 + 8
+	} else {
+		bufferLen = 1 + varbin.UvarintLen(uint64(len(message))) + len(message)
+	}
+	buffer := buf.NewSize(bufferLen)
 	defer buffer.Release()
 	common.Must(binary.Write(buffer, binary.BigEndian, ok))
 	if ok {
 		common.Must(binary.Write(buffer, binary.BigEndian, receiveBPS))
 	} else {
-		err := varbin.Write(buffer, binary.BigEndian, message)
-		if err != nil {
-			return err
-		}
+		common.Must(
+			common.Error(varbin.WriteUvarint(buffer, uint64(len(message)))),
+			common.Error(buffer.WriteString(message)),
+		)
 	}
 	return common.Error(writer.Write(buffer.Bytes()))
 }

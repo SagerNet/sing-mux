@@ -28,7 +28,8 @@ func (c *serverConn) HandshakeFailure(err error) error {
 	defer buffer.Release()
 	common.Must(
 		buffer.WriteByte(statusError),
-		varbin.Write(buffer, binary.BigEndian, errMessage),
+		common.Error(varbin.WriteUvarint(buffer, uint64(len(errMessage)))),
+		common.Error(buffer.WriteString(errMessage)),
 	)
 	return common.Error(c.ExtendedConn.Write(buffer.Bytes()))
 }
@@ -92,7 +93,8 @@ func (c *serverPacketConn) HandshakeFailure(err error) error {
 	defer buffer.Release()
 	common.Must(
 		buffer.WriteByte(statusError),
-		varbin.Write(buffer, binary.BigEndian, errMessage),
+		common.Error(varbin.WriteUvarint(buffer, uint64(len(errMessage)))),
+		common.Error(buffer.WriteString(errMessage)),
 	)
 	return common.Error(c.ExtendedConn.Write(buffer.Bytes()))
 }
@@ -184,7 +186,8 @@ func (c *serverPacketAddrConn) HandshakeFailure(err error) error {
 	defer buffer.Release()
 	common.Must(
 		buffer.WriteByte(statusError),
-		varbin.Write(buffer, binary.BigEndian, errMessage),
+		common.Error(varbin.WriteUvarint(buffer, uint64(len(errMessage)))),
+		common.Error(buffer.WriteString(errMessage)),
 	)
 	return common.Error(c.ExtendedConn.Write(buffer.Bytes()))
 }
@@ -194,7 +197,7 @@ func (c *serverPacketAddrConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 	if err != nil {
 		return
 	}
-	if destination.IsFqdn() {
+	if destination.IsDomain() {
 		addr = destination
 	} else {
 		addr = destination.UDPAddr()

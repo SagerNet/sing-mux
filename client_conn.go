@@ -319,7 +319,7 @@ func (c *clientPacketAddrConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 	if err != nil {
 		return
 	}
-	if destination.IsFqdn() {
+	if destination.IsDomain() {
 		addr = destination
 	} else {
 		addr = destination.UDPAddr()
